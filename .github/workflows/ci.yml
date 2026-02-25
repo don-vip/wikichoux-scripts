@@ -1,0 +1,44 @@
+name: 'Code validation'
+on: [push, pull_request]
+
+jobs:
+  linter:
+    name: 'Linter'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: 'Install dependencies'
+        run: yarn
+
+      - name: 'Run linter'
+        run: yarn run eslint
+
+  tests:
+    name: 'Selenium tests (Firefox)'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+          architecture: x64
+
+      - name: 'Install dependencies'
+        run: |
+          wget -qO- "https://download.mozilla.org/?product=firefox-latest-ssl&os=linux64&lang=en-US" \
+            | sudo tar -xJ -C /usr/local/bin/
+          sudo apt -qq install -y -o=Dpkg::Use-Pty=0 python3-selenium python3-pytest
+          GECKO_VER=$(curl -s https://api.github.com/repos/mozilla/geckodriver/releases/latest | jq -r '.tag_name')
+          wget -qO- https://github.com/mozilla/geckodriver/releases/download/$GECKO_VER/geckodriver-$GECKO_VER-linux64.tar.gz \
+              | sudo tar -xz -C /usr/local/bin
+          sudo chmod +x /usr/local/bin/geckodriver
+
+      - name: 'Run tests'
+        run: |
+          pytest-3 || pytest-3 --lf --lfnf none

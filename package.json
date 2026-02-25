@@ -1,0 +1,48 @@
+{
+    "name": "wikichoux-scripts",
+    "version": "1.0.0",
+    "description": "Collection of Tampermonkey scripts for Wikimedia French politics",
+    "main": "index.js",
+    "scripts": {
+        "prettier:format": "prettier wc*user.js",
+        "lint": "npm run eslint",
+        "eslint": "node node_modules/eslint/bin/eslint.js \"*user.js\""
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/don-vip/wikichoux-scripts.git"
+    },
+    "keywords": [
+        "wikidata",
+        "wikimedia",
+        "commons",
+        "france",
+        "politics",
+        "userscripts"
+    ],
+    "author": "Vincent Privat <vincent.privat@pm.me>",
+    "license": "SEE LICENSE IN individual userscripts",
+    "bugs": {
+        "url": "https://github.com/don-vip/wikichoux-scripts/issues"
+    },
+    "homepage": "https://github.com/don-vip/wikichoux-scripts#readme",
+    "devDependencies": {
+        "eslint": "^9.39.3",
+        "eslint-config-prettier": "^10.1.8",
+        "eslint-plugin-import": "^2.32.0",
+        "eslint-plugin-prettier": "^5.5.5",
+        "globals": "^17.3.0",
+        "prettier": "^3.8.1"
+    },
+    "prettier": {
+        "printWidth": 100,
+        "singleQuote": true,
+        "tabWidth": 4,
+        "useTabs": false,
+        "semi": true,
+        "quoteProps": "preserve",
+        "trailingComma": "es5",
+        "bracketSpacing": false,
+        "arrowParens": "avoid"
+    }
+}
