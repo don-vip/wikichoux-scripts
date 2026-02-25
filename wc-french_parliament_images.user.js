@@ -17,6 +17,38 @@
   const WD_ENDPOINT = "https://query.wikidata.org/sparql";
   const IMAGE_WIDTH = "120px";
   const REQUEST_DELAY_MS = 150;
+  const FALLBACK_IMAGE = "https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Sin_foto.svg/120px-Sin_foto.svg.png";
+  const CACHE_PREFIX = "an_wd_photo_";
+  const CACHE_EXPIRATION_DAYS = 1;
+  const CACHE_EXPIRATION_MS = CACHE_EXPIRATION_DAYS * 24 * 60 * 60 * 1000;
+
+  /* =========================
+     CACHE
+  ========================== */
+
+  function setCachedImage(anId, imageUrl) {
+    localStorage.setItem(CACHE_PREFIX + anId, JSON.stringify({
+        url: imageUrl,
+        timestamp: Date.now()
+    }));
+  }
+
+  function getCachedImage(anId) {
+      const raw = localStorage.getItem(CACHE_PREFIX + anId);
+      if (!raw) return null;
+
+      try {
+          const data = JSON.parse(raw);
+          if (Date.now() - data.timestamp > CACHE_EXPIRATION_MS) {
+              localStorage.removeItem(CACHE_PREFIX + anId);
+              return null;
+          }
+          return data.url;
+      } catch (e) {
+          localStorage.removeItem(CACHE_PREFIX + anId);
+          return null;
+      }
+  }
 
   /* =========================
      UTILS
@@ -62,6 +94,43 @@
      MAIN LOGIC
   ========================== */
 
+  function cloneLiWithoutCurtain(originalLi, imageUrl) {
+      const li = document.createElement("li");
+      li.classList.add("shown");
+      li.dataset.couleur = originalLi.dataset.couleur;
+      li.dataset.urlimage = imageUrl;
+
+      const originalA = originalLi.querySelector("a");
+      if (originalA) {
+          const newA = document.createElement("a");
+          newA.href = commonsFilePageFromImageUrl(imageUrl);
+          newA.title = "Photo issue de Wikimedia Commons (Wikidata)";
+          newA.target = "_blank";
+
+          const img = originalA.querySelector("img");
+          const h3 = originalA.querySelector("h3");
+          if (img) {
+            const newImg = img.cloneNode(true);
+            newImg.src = imageUrl;
+            newA.appendChild(newImg);
+          }
+          if (h3) {
+            const newH3 = h3.cloneNode(true);
+            newH3.textContent = `${h3.textContent} (Wikimedia)`;
+            newH3.style.opacity = "0.8";
+            newA.appendChild(newH3);
+          }
+
+          li.appendChild(newA);
+      }
+
+      // Visual distinction
+      li.style.outline = "2px dashed #777";
+      li.style.outlineOffset = "-4px";
+
+      return li;
+  }
+
   async function processDeputy(li) {
     const link = li.querySelector("a[href]");
     const img = li.querySelector("img");
@@ -72,43 +141,19 @@
     const anId = extractANIdentifier(link.getAttribute("href"));
     if (!anId) return;
 
-    let imageUrl;
-    try {
-      imageUrl = await fetchWikidataImageByANId(anId);
-    } catch (e) {
-      console.warn("Wikidata error for AN ID", anId, e);
-      return;
+    let imageUrl = getCachedImage(anId);
+    if (!imageUrl) {
+      try {
+        imageUrl = await fetchWikidataImageByANId(anId) ?? FALLBACK_IMAGE;
+        setCachedImage(anId, imageUrl);
+      } catch (e) {
+        console.warn("Wikidata error for AN ID", anId, e);
+        return;
+      }
     }
 
-    if (!imageUrl) return;
-
-    // Clone original <li>
-    const wikidataLi = li.cloneNode(true);
-
-    const wikidataImg = wikidataLi.querySelector("img");
-    const wikidataLink = wikidataLi.querySelector("a");
-    const wikidataH3 = wikidataLi.querySelector("h3");
-
-    // Replace image
-    wikidataImg.src = imageUrl;
-    wikidataImg.style.width = IMAGE_WIDTH;
-    wikidataImg.style.objectFit = "contain";
-
-    // Link to Commons file page
-    wikidataLink.href = commonsFilePageFromImageUrl(imageUrl);
-    wikidataLink.target = "_blank";
-    wikidataLink.title = "Photo issue de Wikimedia Commons (Wikidata)";
-
-    // Label
-    wikidataH3.textContent = `${wikidataH3.textContent} (Wikimedia)`;
-    wikidataH3.style.opacity = "0.8";
-
-    // Visual distinction
-    wikidataLi.style.outline = "2px dashed #777";
-    wikidataLi.style.outlineOffset = "-4px";
-
-    // Insert just after official entry
-    li.insertAdjacentElement("afterend", wikidataLi);
+    // Insert Wikimedia image just after official one
+    li.insertAdjacentElement("afterend", cloneLiWithoutCurtain(li, imageUrl));
   }
 
   async function main() {
