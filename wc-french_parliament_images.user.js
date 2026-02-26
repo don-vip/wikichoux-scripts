@@ -1,9 +1,15 @@
 // ==UserScript==
 // @name         Display Wikimedia picture of French representatives
 // @namespace    https://github.org/don-vip/wikichoux-scripts
-// @version      2026-02-25
+// @version      2026-02-26
 // @description  Display picture of French representatives from their Wikidata item, on French Parliament websites (National Assembly and Senate)
+// @match        https://www2.assemblee-nationale.fr/deputes/liste/alphabetique
+// @match        https://www2.assemblee-nationale.fr/deputes/liste/clos
+// @match        https://www2.assemblee-nationale.fr/deputes/liste/departements
+// @match        https://www2.assemblee-nationale.fr/deputes/liste/groupe-politique
 // @match        https://www2.assemblee-nationale.fr/deputes/liste/photo
+// @match        https://www2.assemblee-nationale.fr/deputes/liste/regions
+// @match        https://www2.assemblee-nationale.fr/deputes/liste/tableau
 // @grant        none
 // ==/UserScript==
 
@@ -100,8 +106,207 @@
     return url.replace(/^http:\/\//i, "https://");
   }
 
+  function createMiniImageLink() {
+    const a = document.createElement("a");
+    a.href = "#";
+    a.target = "_self";
+    a.title = "Chargement…";
+    a.style.marginRight = "6px";
+    a.style.verticalAlign = "middle";
+
+    const img = document.createElement("img");
+    img.src = LOADING_IMAGE;
+    img.width = 16;
+    img.height = 16;
+    img.style.objectFit = "contain";
+    img.style.verticalAlign = "middle";
+
+    a.appendChild(img);
+    return { a, img };
+  }
+
   /* =========================
-     PLACEHOLDER CLONE
+     https://www2.assemblee-nationale.fr/deputes/liste/alphabetique
+     https://www2.assemblee-nationale.fr/deputes/liste/departements
+     https://www2.assemblee-nationale.fr/deputes/liste/regions
+     https://www2.assemblee-nationale.fr/deputes/liste/groupe-politique
+  ========================== */
+
+  async function fillAlphabeticalLi(anId, li, photoLink, img) {
+    const cached = getCachedImage(anId);
+    let imageUrl;
+    let itemUrl;
+
+    if (cached) {
+      imageUrl = cached.image ?? FALLBACK_IMAGE;
+      itemUrl = cached.item ?? null;
+    } else {
+      const wd = await fetchWikidataImageAndItemByANId(anId);
+      imageUrl = wd.image ?? FALLBACK_IMAGE;
+      itemUrl = wd.item ?? null;
+      setCachedImage(anId, wd.image, wd.item);
+    }
+
+    const nameLink = li.querySelector("a[href*='/deputes/fiche/']");
+
+    img.src = imageUrl !== FALLBACK_IMAGE
+      ? imageUrl + "?width=16"
+      : FALLBACK_IMAGE;
+
+    if (imageUrl !== FALLBACK_IMAGE) {
+      photoLink.href = commonsFilePageFromImageUrl(imageUrl);
+      photoLink.target = "_blank";
+      photoLink.title = "Photo via Wikimedia Commons";
+      nameLink.style.color = "#1a7f37";
+    } else if (itemUrl) {
+      photoLink.href = itemUrl;
+      photoLink.target = "_blank";
+      photoLink.title = "Pas de photo, voir l’item Wikidata";
+      nameLink.style.color = "#c1121f";
+    } else {
+      photoLink.href = "#";
+      photoLink.title = "Pas de photo ni d’item Wikidata";
+      photoLink.target = "_self";
+      nameLink.style.color = "#c1121f";
+    }
+  }
+
+  async function processAlphabeticalLis(lis) {
+    let index = 0;
+
+    async function worker() {
+      while (index < lis.length) {
+        const i = index++;
+        const li = lis[i];
+        const nameLink = li.querySelector("a");
+        if (!nameLink) continue;
+
+        const anId = extractANIdentifier(nameLink.href);
+        if (!anId) continue;
+
+        const { a: photoLink, img } = createMiniImageLink();
+        nameLink.insertAdjacentElement("beforebegin", photoLink);
+
+        await fillAlphabeticalLi(anId, li, photoLink, img);
+        await new Promise(r => setTimeout(r, REQUEST_DELAY_MS));
+      }
+    }
+
+    const workers = [];
+    for (let i = 0; i < CONCURRENCY; i++) {
+      workers.push(worker());
+    }
+    await Promise.all(workers);
+  }
+
+  /* =========================
+     https://www2.assemblee-nationale.fr/deputes/liste/tableau
+     https://www2.assemblee-nationale.fr/deputes/liste/clos
+  ========================== */
+
+  function addDeputesPhotoHeader(table) {
+    const theadRow = table.querySelector("thead tr");
+    if (!theadRow) return;
+
+    const th = document.createElement("th");
+    th.textContent = "Photo";
+    th.style.width = "72px";
+    th.style.textAlign = "center";
+
+    theadRow.insertBefore(th, theadRow.firstChild);
+  }
+
+  function createDeputesPhotoCell() {
+    const td = document.createElement("td");
+    td.style.textAlign = "center";
+
+    const a = document.createElement("a");
+    a.href = "#";
+    a.title = "Chargement…";
+
+    const img = document.createElement("img");
+    img.src = LOADING_IMAGE;
+    img.width = 64;
+    img.height = 64;
+    img.style.objectFit = "contain";
+
+    a.appendChild(img);
+    td.appendChild(a);
+
+    return { td, a, img };
+  }
+
+  async function fillDeputesRow(anId, nameLink, photoLink, img) {
+    const cached = getCachedImage(anId);
+    let imageUrl;
+    let itemUrl;
+
+    if (cached) {
+      imageUrl = cached.image ?? FALLBACK_IMAGE;
+      itemUrl = cached.item ?? null;
+    } else {
+      const wd = await fetchWikidataImageAndItemByANId(anId);
+      imageUrl = wd.image ?? FALLBACK_IMAGE;
+      itemUrl = wd.item ?? null;
+      setCachedImage(anId, wd.image, wd.item);
+    }
+
+    img.src = imageUrl !== FALLBACK_IMAGE
+      ? imageUrl + "?width=64"
+      : FALLBACK_IMAGE;
+
+    if (imageUrl !== FALLBACK_IMAGE) {
+      photoLink.href = commonsFilePageFromImageUrl(imageUrl);
+      photoLink.target = "_blank";
+      photoLink.title = "Photo via Wikimedia Commons";
+      nameLink.style.color = "#1a7f37";
+    } else if (itemUrl) {
+      photoLink.href = itemUrl;
+      photoLink.target = "_blank";
+      photoLink.title = "Pas de photo, voir l’item Wikidata";
+      nameLink.style.color = "#c1121f";
+    } else {
+      photoLink.href = "#";
+      photoLink.title = "Pas de photo ni d’item Wikidata";
+      nameLink.style.color = "#c1121f";
+    }
+  }
+
+  async function processDeputesTable(table) {
+    addDeputesPhotoHeader(table);
+
+    const rows = [...table.querySelectorAll("tbody tr")];
+    let index = 0;
+
+    async function worker() {
+      while (index < rows.length) {
+        const i = index++;
+        const tr = rows[i];
+
+        const nameLink = tr.querySelector("td a[href*='/deputes/fiche/']");
+        if (!nameLink) continue;
+
+        const anId = extractANIdentifier(nameLink.href);
+        if (!anId) continue;
+
+        const { td, a: photoLink, img } = createDeputesPhotoCell();
+
+        tr.insertBefore(td, tr.firstChild);
+
+        await fillDeputesRow(anId, nameLink, photoLink, img);
+        await new Promise(r => setTimeout(r, REQUEST_DELAY_MS));
+      }
+    }
+
+    const workers = [];
+    for (let i = 0; i < CONCURRENCY; i++) {
+      workers.push(worker());
+    }
+    await Promise.all(workers);
+  }
+
+  /* =========================
+     https://www2.assemblee-nationale.fr/deputes/liste/photo
   ========================== */
 
   function createPlaceholderLi(originalLi) {
@@ -208,19 +413,42 @@
   ========================== */
 
   async function main() {
-    const grid = document.querySelector("#grid");
-    if (!grid) return;
-
     console.info("wc-french_parliament_images : starting");
-    const deputies = [...grid.querySelectorAll(":scope > li")];
 
-    const wikidataLis = deputies.map(li => {
-      const placeholderLi = createPlaceholderLi(li);
-      li.insertAdjacentElement("afterend", placeholderLi);
-      return { originalLi: li, placeholderLi };
-    });
+    const alphaLists = document.querySelectorAll(".col-container ul");
+    if (alphaLists.length) {
+      // https://www2.assemblee-nationale.fr/deputes/liste/alphabetique
+      // https://www2.assemblee-nationale.fr/deputes/liste/departements
+      // https://www2.assemblee-nationale.fr/deputes/liste/regions
+      // https://www2.assemblee-nationale.fr/deputes/liste/groupe-politique
+      const lis = [...document.querySelectorAll(".col-container ul li")];
+      await processAlphabeticalLis(lis);
+    } else {
+      const grid = document.querySelector("#grid");
+      if (grid) {
+        // https://www2.assemblee-nationale.fr/deputes/liste/photo
+        const deputies = [...grid.querySelectorAll(":scope > li")];
+        const wikidataLis = deputies.map(li => {
+          const placeholderLi = createPlaceholderLi(li);
+          li.insertAdjacentElement("afterend", placeholderLi);
+          return { originalLi: li, placeholderLi };
+        });
+        await processAllWikidataLis(wikidataLis);
+      } else {
+        const closTable = document.querySelector("table.clos");
+        if (closTable) {
+          // https://www2.assemblee-nationale.fr/deputes/liste/clos
+          await processDeputesTable(closTable);
+        } else {
+          const deputesTable = document.querySelector("table.deputes");
+          // https://www2.assemblee-nationale.fr/deputes/liste/tableau
+          if (deputesTable) {
+            await processDeputesTable(deputesTable);
+          }
+        }
+      }
+    }
 
-    await processAllWikidataLis(wikidataLis);
     console.info("wc-french_parliament_images : done");
   }
 
