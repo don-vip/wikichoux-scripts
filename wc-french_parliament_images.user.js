@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Display Wikimedia picture of French representatives
 // @namespace    https://github.org/don-vip/wikichoux-scripts
-// @version      2026-02-26
+// @version      2026-02-27
 // @description  Display picture of French representatives from their Wikidata item, on French Parliament websites (National Assembly and Senate)
 // @match        https://www2.assemblee-nationale.fr/deputes/liste/alphabetique
 // @match        https://www2.assemblee-nationale.fr/deputes/liste/clos
@@ -10,6 +10,7 @@
 // @match        https://www2.assemblee-nationale.fr/deputes/liste/photo
 // @match        https://www2.assemblee-nationale.fr/deputes/liste/regions
 // @match        https://www2.assemblee-nationale.fr/deputes/liste/tableau
+// @match        https://www.assemblee-nationale.fr/dyn/seance-publique/derouleur
 // @grant        none
 // ==/UserScript==
 
@@ -111,6 +112,8 @@
     a.href = "#";
     a.target = "_self";
     a.title = "Chargement…";
+    a.style.display = "inline";
+    a.style.whiteSpace = "nowrap";
     a.style.marginRight = "6px";
     a.style.verticalAlign = "middle";
 
@@ -118,6 +121,7 @@
     img.src = LOADING_IMAGE;
     img.width = 16;
     img.height = 16;
+    img.style.display = "inline";
     img.style.objectFit = "contain";
     img.style.verticalAlign = "middle";
 
@@ -409,6 +413,141 @@
   }
 
   /* =========================
+     https://www.assemblee-nationale.fr/dyn/seance-publique/derouleur
+  ========================== */
+
+  async function fetchDerouleurJson() {
+    const url = "https://www.assemblee-nationale.fr/local/derouleur/derouleur.json";
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    return res.json();
+  }
+
+  function extractDeputesFromDerouleur(json) {
+    const lignes = json?.racine?.contenu?.phase?.ligne;
+    if (!Array.isArray(lignes)) return [];
+
+    return lignes
+      .filter(l =>
+        l.ligne_libelle_1 &&
+        l.depute_tribun_id &&
+        l.ligne_amendement_uid
+      )
+      .map(l => ({
+        anId: l.depute_tribun_id,
+        libelle: l.ligne_libelle_1,
+        uid: l.ligne_amendement_uid
+      }));
+  }
+
+  function waitForDerouleurHtml() {
+    return new Promise(resolve => {
+      const check = () => {
+        if (document.querySelector("span[id^='LIB_']")) {
+          resolve();
+        } else {
+          setTimeout(check, 300);
+        }
+      };
+      check();
+    });
+  }
+
+  function extractDeputyLabel(text) {
+    const m = text.match(/\b(M\.|Mme)\s+[A-ZÀ-Ÿ\-]+/);
+    return m ? m[0] : null;
+  }
+
+  function observeDerouleurDomLive(linesByUid) {
+    const observer = new MutationObserver(mutations => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (!(node instanceof HTMLElement)) continue;
+
+          // le span est ajouté directement
+          if (node.matches?.("span[id^='LIB_']")) {
+            const uid = node.id.replace("LIB_", "");
+            const line = linesByUid.get(uid);
+            if (line) enhanceDerouleurLine(line);
+          }
+
+          // ou il est plus profond
+          const spans = node.querySelectorAll?.("span[id^='LIB_']");
+          for (const span of spans || []) {
+            const uid = span.id.replace("LIB_", "");
+            const line = linesByUid.get(uid);
+            if (line) enhanceDerouleurLine(line);
+          }
+        }
+      }
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+  }
+
+  function indexDerouleurLines(lines) {
+    const map = new Map();
+    for (const l of lines) {
+      map.set(l.uid, l);
+    }
+    return map;
+  }
+
+  async function enhanceDerouleurLine({ anId, uid }) {
+    const span = document.querySelector(`#LIB_${uid}`);
+    if (!span) return;
+    const originalText = span.textContent;
+    const deputyLabel = extractDeputyLabel(originalText);
+    if (!deputyLabel) return;
+
+    if (span.dataset.wcEnhanced) return;
+    span.dataset.wcEnhanced = "1";
+    span.textContent = originalText.replace(deputyLabel, "").replace(/\s+$/, "") + " ";
+
+    const { a: photoLink, img } = createMiniImageLink();
+
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = deputyLabel;
+    nameSpan.style.display = "inline";
+    nameSpan.style.whiteSpace = "nowrap";
+
+    span.append(photoLink, document.createTextNode(" "), nameSpan);
+
+    const cached = getCachedImage(anId);
+    let imageUrl; let itemUrl;
+
+    if (cached) {
+      imageUrl = cached.image ?? FALLBACK_IMAGE;
+      itemUrl = cached.item ?? null;
+    } else {
+      const wd = await fetchWikidataImageAndItemByANId(anId);
+      imageUrl = wd.image ?? FALLBACK_IMAGE;
+      itemUrl = wd.item ?? null;
+      setCachedImage(anId, wd.image, wd.item);
+    }
+
+    img.src = imageUrl !== FALLBACK_IMAGE
+      ? imageUrl + "?width=16"
+      : FALLBACK_IMAGE;
+
+    if (imageUrl !== FALLBACK_IMAGE) {
+      photoLink.href = commonsFilePageFromImageUrl(imageUrl);
+      photoLink.target = "_blank";
+      nameSpan.style.color = "#1a7f37";
+    } else if (itemUrl) {
+      photoLink.href = itemUrl;
+      photoLink.target = "_blank";
+      nameSpan.style.color = "#c1121f";
+    } else {
+      photoLink.href = "#";
+      nameSpan.style.color = "#c1121f";
+    }
+  }
+
+  /* =========================
      MAIN
   ========================== */
 
@@ -444,6 +583,14 @@
           // https://www2.assemblee-nationale.fr/deputes/liste/tableau
           if (deputesTable) {
             await processDeputesTable(deputesTable);
+          } else if (location.pathname.includes("/dyn/seance-publique/derouleur")) {
+            // https://www.assemblee-nationale.fr/dyn/seance-publique/derouleur
+            const json = await fetchDerouleurJson();
+            if (json) {
+              const lines = extractDeputesFromDerouleur(json);
+              const indexed = indexDerouleurLines(lines);
+              observeDerouleurDomLive(indexed);
+            }
           }
         }
       }
