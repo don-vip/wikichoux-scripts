@@ -424,19 +424,17 @@
   }
 
   function extractDeputesFromDerouleur(json) {
-    const lignes = json?.racine?.contenu?.phase?.ligne;
-    if (!Array.isArray(lignes)) return [];
+    const phases = json?.racine?.contenu?.phase;
+    if (!Array.isArray(phases)) return [];
+    const lignes = phases.flatMap(p => p.ligne || []);
 
     return lignes
-      .filter(l =>
-        l.ligne_libelle_1 &&
-        l.depute_tribun_id &&
-        l.ligne_amendement_uid
-      )
+      .filter(l => l.ligne_libelle_1 && l.depute_tribun_id)
       .map(l => ({
         anId: l.depute_tribun_id,
         libelle: l.ligne_libelle_1,
-        uid: l.ligne_amendement_uid
+        uid: l.ligne_amendement_uid ?? l.id,
+        isLarge: !l.ligne_amendement_uid
       }));
   }
 
@@ -454,29 +452,43 @@
   }
 
   function extractDeputyLabel(text) {
-    const m = text.match(/\b(M\.|Mme)\s+[A-ZÀ-Ÿ\-]+/);
+    const m = text.match(/\b(M\.|Mme)\s+\S.*$/);
     return m ? m[0] : null;
   }
 
-  function observeDerouleurDomLive(linesByUid) {
+  function observeDerouleurDomLive(linesByUid, linesByAnId) {
     const observer = new MutationObserver(mutations => {
       for (const m of mutations) {
         for (const node of m.addedNodes) {
           if (!(node instanceof HTMLElement)) continue;
 
-          // le span est ajouté directement
+          // amendements : spans LIB_<uid>
           if (node.matches?.("span[id^='LIB_']")) {
             const uid = node.id.replace("LIB_", "");
             const line = linesByUid.get(uid);
             if (line) enhanceDerouleurLine(line);
           }
-
-          // ou il est plus profond
           const spans = node.querySelectorAll?.("span[id^='LIB_']");
           for (const span of spans || []) {
             const uid = span.id.replace("LIB_", "");
             const line = linesByUid.get(uid);
             if (line) enhanceDerouleurLine(line);
+          }
+
+          // inscrits/rapporteurs : liens ou images contenant PA<anId>
+          if (linesByAnId.size > 0) {
+            const candidates = [
+              ...(node.matches?.("[href*='/PA'],[src*='/PA']") ? [node] : []),
+              ...(node.querySelectorAll?.("[href*='/PA'],[src*='/PA']") || [])
+            ];
+            for (const el of candidates) {
+              const attr = el.getAttribute("href") || el.getAttribute("src") || "";
+              const match = attr.match(/\/PA(\d+)/);
+              if (!match) continue;
+              const anId = match[1];
+              const line = linesByAnId.get(anId);
+              if (line) enhanceDerouleurLargeEntry(line, el);
+            }
           }
         }
       }
@@ -489,32 +501,23 @@
   }
 
   function indexDerouleurLines(lines) {
-    const map = new Map();
+    const byUid = new Map();
+    const byAnId = new Map();
     for (const l of lines) {
-      map.set(l.uid, l);
+      if (l.isLarge) {
+        byAnId.set(l.anId, l);
+      } else {
+        byUid.set(l.uid, l);
+      }
     }
-    return map;
+    return { byUid, byAnId };
   }
 
-  async function enhanceDerouleurLine({ anId, uid }) {
-    const span = document.querySelector(`#LIB_${uid}`);
-    if (!span) return;
-    const originalText = span.textContent;
-    const deputyLabel = extractDeputyLabel(originalText);
-    if (!deputyLabel) return;
-
-    if (span.dataset.wcEnhanced) return;
-    span.dataset.wcEnhanced = "1";
-    span.textContent = originalText.replace(deputyLabel, "").replace(/\s+$/, "") + " ";
-
-    const { a: photoLink, img } = createMiniImageLink();
-
-    const nameSpan = document.createElement("span");
-    nameSpan.textContent = deputyLabel;
-    nameSpan.style.display = "inline";
-    nameSpan.style.whiteSpace = "nowrap";
-
-    span.append(photoLink, document.createTextNode(" "), nameSpan);
+  async function enhanceDerouleurLargeEntry({ anId }, triggerEl) {
+    // triggerEl est le <a href*="PA{anId}"> ou <img src*="PA{anId}"> trouvé dans le DOM
+    // On cherche l'image officielle parente pour insérer la photo Wikimedia à côté
+    if (triggerEl.dataset.wcEnhanced) return;
+    triggerEl.dataset.wcEnhanced = "1";
 
     const cached = getCachedImage(anId);
     let imageUrl; let itemUrl;
@@ -529,21 +532,109 @@
       setCachedImage(anId, wd.image, wd.item);
     }
 
-    img.src = imageUrl !== FALLBACK_IMAGE
-      ? imageUrl + "?width=16"
-      : FALLBACK_IMAGE;
+    // Trouver la photo officielle AN (img dans le même bloc que le lien du député)
+    const container = triggerEl.closest("li, tr, div[class], article") ?? triggerEl.parentElement;
+    const officialImg = container?.querySelector("img");
+    const nameLink = container?.querySelector(`a[href*="PA${anId}"]`) ?? (triggerEl.tagName === "A" ? triggerEl : null);
 
-    if (imageUrl !== FALLBACK_IMAGE) {
-      photoLink.href = commonsFilePageFromImageUrl(imageUrl);
-      photoLink.target = "_blank";
-      nameSpan.style.color = "#1a7f37";
-    } else if (itemUrl) {
-      photoLink.href = itemUrl;
-      photoLink.target = "_blank";
-      nameSpan.style.color = "#c1121f";
+    const photoLink = document.createElement("a");
+    photoLink.style.display = "inline-block";
+    photoLink.style.verticalAlign = "middle";
+    photoLink.style.marginRight = "6px";
+
+    const wdImg = document.createElement("img");
+    wdImg.src = imageUrl !== FALLBACK_IMAGE ? imageUrl + "?width=64" : FALLBACK_IMAGE;
+    wdImg.width = 64;
+    wdImg.height = 64;
+    wdImg.style.objectFit = "contain";
+    photoLink.appendChild(wdImg);
+
+    // La colonne jaune-photo a une largeur fixe — insérer dans jaune-acteur avant le nom
+    const acteurTd = officialImg
+      ? officialImg.closest("tr")?.querySelector("td.jaune-acteur")
+      : null;
+
+    if (acteurTd) {
+      acteurTd.insertAdjacentElement("afterbegin", photoLink);
+    } else if (nameLink) {
+      nameLink.insertAdjacentElement("beforebegin", photoLink);
     } else {
-      photoLink.href = "#";
-      nameSpan.style.color = "#c1121f";
+      return;
+    }
+
+    if (nameLink) {
+      if (imageUrl !== FALLBACK_IMAGE) {
+        photoLink.href = commonsFilePageFromImageUrl(imageUrl);
+        photoLink.target = "_blank";
+        photoLink.title = "Photo via Wikimedia Commons";
+        nameLink.style.color = "#1a7f37";
+      } else if (itemUrl) {
+        photoLink.href = itemUrl;
+        photoLink.target = "_blank";
+        photoLink.title = "Pas de photo, voir l'item Wikidata";
+        nameLink.style.color = "#c1121f";
+      } else {
+        photoLink.href = "#";
+        photoLink.title = "Pas de photo ni d'item Wikidata";
+        nameLink.style.color = "#c1121f";
+      }
+    }
+  }
+
+  async function enhanceDerouleurLine({ anId, uid, isLarge }) {
+    if (isLarge) return; // géré via enhanceDerouleurLargeEntry par l'observer
+
+    const span = document.querySelector(`#LIB_${uid}`);
+    if (!span) return;
+    const originalText = span.textContent;
+    const deputyLabel = extractDeputyLabel(originalText);
+    if (!deputyLabel) return;
+
+    if (span.dataset.wcEnhanced) return;
+    span.dataset.wcEnhanced = "1";
+
+    const cached = getCachedImage(anId);
+    let imageUrl; let itemUrl;
+
+    if (cached) {
+      imageUrl = cached.image ?? FALLBACK_IMAGE;
+      itemUrl = cached.item ?? null;
+    } else {
+      const wd = await fetchWikidataImageAndItemByANId(anId);
+      imageUrl = wd.image ?? FALLBACK_IMAGE;
+      itemUrl = wd.item ?? null;
+      setCachedImage(anId, wd.image, wd.item);
+    }
+
+    {
+      // Pour les amendements : insérer une mini photo 16px dans le span
+      span.textContent = originalText.replace(deputyLabel, "").replace(/\s+$/, "") + " ";
+
+      const { a: photoLink, img } = createMiniImageLink();
+
+      const nameSpan = document.createElement("span");
+      nameSpan.textContent = deputyLabel;
+      nameSpan.style.display = "inline";
+      nameSpan.style.whiteSpace = "nowrap";
+
+      span.append(photoLink, document.createTextNode(" "), nameSpan);
+
+      img.src = imageUrl !== FALLBACK_IMAGE
+        ? imageUrl + "?width=16"
+        : FALLBACK_IMAGE;
+
+      if (imageUrl !== FALLBACK_IMAGE) {
+        photoLink.href = commonsFilePageFromImageUrl(imageUrl);
+        photoLink.target = "_blank";
+        nameSpan.style.color = "#1a7f37";
+      } else if (itemUrl) {
+        photoLink.href = itemUrl;
+        photoLink.target = "_blank";
+        nameSpan.style.color = "#c1121f";
+      } else {
+        photoLink.href = "#";
+        nameSpan.style.color = "#c1121f";
+      }
     }
   }
 
@@ -588,8 +679,8 @@
             const json = await fetchDerouleurJson();
             if (json) {
               const lines = extractDeputesFromDerouleur(json);
-              const indexed = indexDerouleurLines(lines);
-              observeDerouleurDomLive(indexed);
+              const { byUid, byAnId } = indexDerouleurLines(lines);
+              observeDerouleurDomLive(byUid, byAnId);
             }
           }
         }
