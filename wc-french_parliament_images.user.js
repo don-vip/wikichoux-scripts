@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Display Wikimedia picture of French representatives
 // @namespace    https://github.org/don-vip/wikichoux-scripts
-// @version      2026-02-27
+// @version      2026-06-11
 // @description  Display picture of French representatives from their Wikidata item, on French Parliament websites (National Assembly and Senate)
 // @match        https://www2.assemblee-nationale.fr/deputes/liste/alphabetique
 // @match        https://www2.assemblee-nationale.fr/deputes/liste/clos
