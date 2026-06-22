@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Display Wikimedia picture of French representatives
 // @namespace    https://github.org/don-vip/wikichoux-scripts
-// @version      2026-06-11
+// @version      2026-06-22
 // @description  Display picture of French representatives from their Wikidata item, on French Parliament websites (National Assembly and Senate)
 // @match        https://www2.assemblee-nationale.fr/deputes/liste/alphabetique
 // @match        https://www2.assemblee-nationale.fr/deputes/liste/clos
@@ -423,10 +423,16 @@
     return res.json();
   }
 
+  // The XML-to-JSON export returns an object when there is a single element,
+  // and an array when there are several. Always normalize to an array.
+  function asArray(value) {
+    if (value == null) return [];
+    return Array.isArray(value) ? value : [value];
+  }
+
   function extractDeputesFromDerouleur(json) {
-    const phases = json?.racine?.contenu?.phase;
-    if (!Array.isArray(phases)) return [];
-    const lignes = phases.flatMap(p => p.ligne || []);
+    const phases = asArray(json?.racine?.contenu?.phase);
+    const lignes = phases.flatMap(p => asArray(p.ligne));
 
     return lignes
       .filter(l => l.ligne_libelle_1 && l.depute_tribun_id)
