@@ -7,8 +7,9 @@ one in alphabetical order. For each mandate read on the Sycomore record:
 
 - Wikidata mandate with the same dates: add the legislature (P2937) and, when
   missing, the constituency (P768);
-- no matching Wikidata mandate: create it (dates, legislature, constituency),
-  referenced by the Sycomore record;
+- no matching Wikidata mandate: complete the deputy mandate without any
+  qualifier if there is one, otherwise create a new one (dates, legislature,
+  constituency), referenced by the Sycomore record;
 - Wikidata mandate spanning several legislatures, whose start and end dates
   are those of the first and last Sycomore mandates it covers: split it into
   one mandate per Sycomore mandate;
@@ -158,6 +159,7 @@ DEPARTMENT_OVERRIDES = {
 # Words of the (French) edit summary for each kind of change
 SUMMARY_WORDS = {
     "create": "création",
+    "complete": "complément",
     "split": "découpage",
     "legislature": "législature",
     "constituency": "circonscription",
@@ -556,6 +558,7 @@ class Bot:
         self.stats = {
             "qualified": 0,
             "created": 0,
+            "completed": 0,
             "split": 0,
             "already correct": 0,
             "to check": 0,
@@ -730,9 +733,27 @@ class Bot:
                 continue
             if not candidates:
                 dep_qid = self.constituency(who, dep, start, departmental)
-                changed["new%d" % len(changed)] = new_claim(
-                    start, end, legislature, dep_qid, sid
-                )
+                claim = new_claim(start, end, legislature, dep_qid, sid)
+                # Deputy mandate without any qualifier: complete it instead of adding another one
+                bare = [
+                    c
+                    for c in free
+                    if c["id"] not in used
+                    and item_id(c["mainsnak"]) == DEPUTY
+                    and not c.get("qualifiers")
+                ]
+                if bare:
+                    used.add(bare[0]["id"])
+                    claim["id"] = bare[0]["id"]
+                    claim["rank"] = bare[0].get("rank", "normal")
+                    claim["references"] = [
+                        {k: v for k, v in r.items() if k != "hash"}
+                        for r in bare[0].get("references", [])
+                    ] + claim["references"]
+                    changed[claim["id"]] = claim
+                    actions.append("complete")
+                    continue
+                changed["new%d" % len(changed)] = claim
                 actions.append("create")
                 continue
             claim = candidates[0]
@@ -876,10 +897,14 @@ class Bot:
             for claim in claims:
                 claim.setdefault("id", "%s$dry-run-%d" % (qid, len(simulated)))
                 simulated[claim["id"]] = claim
-        self.stats["created"] += actions.count("create")
-        self.stats["split"] += actions.count("split")
-        self.stats["qualified"] += (
-            len(actions) - actions.count("create") - actions.count("split")
+        for action, stat in (
+            ("create", "created"),
+            ("complete", "completed"),
+            ("split", "split"),
+        ):
+            self.stats[stat] += actions.count(action)
+        self.stats["qualified"] += actions.count("legislature") + actions.count(
+            "constituency"
         )
         print("  %-11s %s" % (", ".join(sorted(set(actions))), who), flush=True)
 

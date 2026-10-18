@@ -35,7 +35,7 @@ Python scripts require Python 3 and [requests](https://pypi.org/project/requests
 For each mandate read on a Sycomore record:
 
 - if a Wikidata mandate has the same dates, the legislature ([P2937](https://www.wikidata.org/wiki/Property:P2937)) is added, and the constituency ([P768](https://www.wikidata.org/wiki/Property:P768)) if missing;
-- if no Wikidata mandate matches, a new one is created with dates, legislature and constituency, referenced by the Sycomore record;
+- if no Wikidata mandate matches, a "member of the French National Assembly" mandate without any qualifier is completed with dates, legislature and constituency, referenced by the Sycomore record; if there is none, a new mandate is created;
 - if a Wikidata mandate spans several legislatures, and its start and end dates are those of the first and last Sycomore mandates it covers, it is split into one mandate per Sycomore mandate;
 - anything else (different dates, ambiguous mandates, items missing or duplicated, unknown departments…) is reported as `TO CHECK` and left untouched.
 
