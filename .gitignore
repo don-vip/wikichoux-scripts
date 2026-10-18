@@ -218,3 +218,7 @@ jspm_packages/
 
 # Optional npm cache directory
 .npm
+
+# Sycomore records cache of sycomore_legislatures.py
+sycomore_cache.json
+sycomore_cache.json.tmp
