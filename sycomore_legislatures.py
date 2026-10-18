@@ -964,6 +964,9 @@ class Bot:
 
 
 def main():
+    # The Windows console encoding (e.g. cp1252) cannot print every name or arrow
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
