@@ -41,6 +41,8 @@ For each mandate read on a Sycomore record:
 
 Sycomore only gives the department. It is used as the constituency only for legislatures elected by departmental ballot, and the item chosen is the one that existed when the mandate started ([P571](https://www.wikidata.org/wiki/Property:P571)/[P576](https://www.wikidata.org/wiki/Property:P576)).
 
+On every mandate processed (created, completed, split or already existing), the generic position "member of the French National Assembly" is replaced by the deputy position of its department (e.g. [deputy of the Seine](https://www.wikidata.org/wiki/Q58462858)), i.e. the subclass of [Q3044918](https://www.wikidata.org/wiki/Q3044918) whose "applies to jurisdiction" ([P1001](https://www.wikidata.org/wiki/Property:P1001)) is that department, when there is exactly one. The department is the constituency of the mandate, or else the one read on Sycomore.
+
 Usage:
 
 ```

@@ -20,6 +20,12 @@ Sycomore only gives the department: it is used as constituency only for
 legislatures elected by departmental ballot, and the chosen item is the one
 existing at the mandate start date (P571/P576).
 
+On every mandate processed (created, completed, split or already existing),
+the generic position "member of the French National Assembly" is replaced by
+the deputy position of its department (e.g. "deputy of the Seine") when one
+exists: the department is the constituency of the mandate, or else the one
+read on Sycomore.
+
 Sycomore records are kept in a JSON cache, so the script can be restarted
 without downloading everything again.
 """
@@ -163,6 +169,7 @@ SUMMARY_WORDS = {
     "split": "découpage",
     "legislature": "législature",
     "constituency": "circonscription",
+    "position": "fonction",
 }
 
 session = requests.Session()
@@ -361,6 +368,20 @@ def deputy_positions():
     return {DEPUTY} | {qid_of(b["p"]["value"]) for b in rows}
 
 
+def department_positions():
+    """Department QID -> deputy position of this department (P1001), when unique."""
+    rows = sparql(
+        "SELECT ?p ?d WHERE { ?p wdt:P279 wd:%s; wdt:P1001 ?d. "
+        "FILTER NOT EXISTS { ?p wdt:P1001 ?other. FILTER(?other != ?d) } }" % DEPUTY
+    )
+    positions = {}
+    for b in rows:
+        positions.setdefault(qid_of(b["d"]["value"]), set()).add(
+            qid_of(b["p"]["value"])
+        )
+    return {d: p.pop() for d, p in positions.items() if len(p) == 1}
+
+
 class Departments:
     """Resolution of a department name into the item existing at a given date."""
 
@@ -501,11 +522,11 @@ def add_qualifier(claim, snak):
         order.append(snak["property"])
 
 
-def new_claim(start, end, legislature, dep_qid, sycomore_id):
+def new_claim(start, end, legislature, dep_qid, sycomore_id, position=DEPUTY):
     claim = {
         "type": "statement",
         "rank": "normal",
-        "mainsnak": item_snak("P39", DEPUTY),
+        "mainsnak": item_snak("P39", position),
     }
     if dep_qid:
         add_qualifier(claim, item_snak("P768", dep_qid))
@@ -551,6 +572,7 @@ class Bot:
         self.cache = FicheCache(cache)
         self.by_sycomore = sycomore_items()
         self.positions = deputy_positions()
+        self.department_positions = department_positions()
         self.departments = Departments()
         self.periods = {}
         # Dry run: QID -> {claim id: claim} of the edits not sent, applied to the entities read again later
@@ -560,6 +582,7 @@ class Bot:
             "created": 0,
             "completed": 0,
             "split": 0,
+            "refined": 0,
             "already correct": 0,
             "to check": 0,
         }
@@ -621,6 +644,28 @@ class Bot:
         if error:
             self.problem(who, "constituency not added, " + error)
         return qid
+
+    def position(self, claim, dep, start):
+        """Deputy position of the department of a mandate whose position is the generic
+        one, or None if there is nothing more precise."""
+        if item_id(claim["mainsnak"]) != DEPUTY:
+            return None
+        deps = {item_id(s) for s in claim.get("qualifiers", {}).get("P768", [])} & set(
+            self.department_positions
+        )
+        if len(deps) != 1:
+            deps = {self.departments.resolve(dep, start)[0]} & set(
+                self.department_positions
+            )
+        return self.department_positions[deps.pop()] if deps else None
+
+    def refine(self, claim, dep, start, changed, actions):
+        """Replace the generic position of a mandate by the deputy position of its department."""
+        position = self.position(claim, dep, start)
+        if position:
+            claim = changed.setdefault(claim["id"], copy_claim(claim))
+            claim["mainsnak"] = item_snak("P39", position)
+            actions.append("position")
 
     def run(self):
         for an_id, legislature, departmental in self.legislatures:
@@ -698,14 +743,16 @@ class Bot:
             if len(done) == 1:
                 claim = done[0]
                 used.add(claim["id"])
+                count = len(actions)
                 if not claim.get("qualifiers", {}).get("P768"):
                     dep_qid = self.constituency(who, dep, start, departmental)
                     if dep_qid:
                         claim = changed.setdefault(claim["id"], copy_claim(claim))
                         add_qualifier(claim, item_snak("P768", dep_qid))
                         actions.append("constituency")
-                        continue
-                self.stats["already correct"] += 1
+                self.refine(claim, dep, start, changed, actions)
+                if len(actions) == count:
+                    self.stats["already correct"] += 1
                 continue
             if len(done) > 1:
                 self.problem(
@@ -734,12 +781,14 @@ class Bot:
             if not candidates:
                 dep_qid = self.constituency(who, dep, start, departmental)
                 claim = new_claim(start, end, legislature, dep_qid, sid)
+                position = self.position(claim, dep, start) or DEPUTY
+                claim["mainsnak"] = item_snak("P39", position)
                 # Deputy mandate without any qualifier: complete it instead of adding another one
                 bare = [
                     c
                     for c in free
                     if c["id"] not in used
-                    and item_id(c["mainsnak"]) == DEPUTY
+                    and item_id(c["mainsnak"]) in (DEPUTY, position)
                     and not c.get("qualifiers")
                 ]
                 if bare:
@@ -788,6 +837,7 @@ class Bot:
             if dep_qid and not claim["qualifiers"].get("P768"):
                 add_qualifier(claim, item_snak("P768", dep_qid))
             actions.append("legislature")
+            self.refine(claim, dep, start, changed, actions)
 
         if changed:
             self.save(qid, who, entity, list(changed.values()), legislature, actions)
@@ -873,6 +923,9 @@ class Bot:
                 dep_qid = self.constituency(who, dep, start, departmental)
                 if dep_qid:
                     add_qualifier(piece, item_snak("P768", dep_qid))
+            position = self.position(piece, dep, start)
+            if position:
+                piece["mainsnak"] = item_snak("P39", position)
             pieces.append(piece)
         pieces[0]["id"] = claim["id"]  # the first piece replaces the original mandate
         return pieces, None
@@ -901,6 +954,7 @@ class Bot:
             ("create", "created"),
             ("complete", "completed"),
             ("split", "split"),
+            ("position", "refined"),
         ):
             self.stats[stat] += actions.count(action)
         self.stats["qualified"] += actions.count("legislature") + actions.count(
