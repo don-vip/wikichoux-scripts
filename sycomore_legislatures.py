@@ -206,11 +206,30 @@ def api_get(**params):
     return get(WIKIDATA, format="json", formatversion="2", **params).json()
 
 
-def api_post(**data):
+def api_post(already_done=None, **data):
+    """POST with retries. Before sending again after a lost connection, already_done()
+    can return the result of a request that was processed anyway (else None)."""
     data.update(format="json", formatversion="2", maxlag="5")
+    attempt = 0
     while True:
-        r = session.post(WIKIDATA, data=data, timeout=60)
-        r.raise_for_status()
+        try:
+            r = session.post(WIKIDATA, data=data, timeout=60)
+            error = "HTTP %d" % r.status_code
+        except (requests.ConnectionError, requests.Timeout) as e:
+            r, error = None, type(e).__name__
+        if r is not None and r.status_code not in (500, 502, 503, 504):
+            r.raise_for_status()
+        else:
+            attempt += 1
+            if attempt >= 6:
+                raise requests.HTTPError("%s: %s" % (WIKIDATA, error))
+            delay = 10 * attempt
+            print("  (Wikidata: %s, retrying in %d s)" % (error, delay), flush=True)
+            time.sleep(delay)
+            res = already_done and already_done()
+            if res:
+                return res
+            continue
         res = r.json()
         if res.get("error", {}).get("code") in ("maxlag", "ratelimited"):
             time.sleep(int(r.headers.get("Retry-After", 10)))
@@ -568,6 +587,11 @@ class Bot:
     def __init__(self, token=None, legislatures=LEGISLATURES, cache=CACHE):
         """Without token, nothing is written to Wikidata (dry run)."""
         self.token = token
+        self.user = (
+            api_get(action="query", meta="userinfo")["query"]["userinfo"]["name"]
+            if token
+            else None
+        )
         self.legislatures = legislatures
         self.cache = FicheCache(cache)
         self.by_sycomore = sycomore_items()
@@ -932,7 +956,24 @@ class Bot:
 
     def save(self, qid, who, entity, claims, legislature, actions):
         if self.token:
+
+            def already_done():
+                """Was the edit saved before the connection was lost?"""
+                rev = api_get(
+                    action="query", prop="revisions", titles=qid, rvprop="ids|user"
+                )["query"]["pages"][0]["revisions"][0]
+                if rev["revid"] == entity["lastrevid"]:
+                    return None
+                if rev["user"] != self.user:
+                    return {
+                        "error": {
+                            "info": "connection lost, edited by %s since" % rev["user"]
+                        }
+                    }
+                return {"success": 1}
+
             res = api_post(
+                already_done=already_done,
                 action="wbeditentity",
                 id=qid,
                 baserevid=entity["lastrevid"],
