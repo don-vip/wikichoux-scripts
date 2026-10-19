@@ -23,7 +23,8 @@ existing at the mandate start date (P571/P576).
 On every mandate processed (created, completed, split or already existing),
 the generic position "member of the French National Assembly" is replaced by
 the position of its legislature when there is one (LEGISLATURE_POSITIONS, e.g.
-"deputy to the Estates General of 1789"), or else by the deputy position of its
+"deputy to the Estates General of 1789", which also replaces a department
+position), or else by the deputy position of its
 department (e.g. "deputy of the Seine") when one exists: the department is the
 constituency of the mandate, or else the one read on Sycomore.
 
@@ -136,6 +137,7 @@ SPECIAL_SEARCHES = {
 # Position replacing the generic one for all the mandates of a legislature
 LEGISLATURE_POSITIONS = {
     "Q876424": "Q59309522",  # deputy to the Estates General of 1789
+    "Q617290": "Q28218611",  # member of the Council of Five Hundred
 }
 LEGISLATURE_INFO = {
     an_id: (qid, departmental) for an_id, qid, departmental in LEGISLATURES
@@ -699,13 +701,16 @@ class Bot:
         return qid
 
     def position(self, claim, legislature, dep, start):
-        """Position of the legislature, or else deputy position of the department, of a
-        mandate whose position is the generic one, or None if there is nothing more precise.
-        """
-        if item_id(claim["mainsnak"]) != DEPUTY:
-            return None
+        """Position of the legislature (replacing the generic position or a department
+        one), or else deputy position of the department (replacing the generic position)
+        of a mandate, or None if there is nothing more precise."""
+        current = item_id(claim["mainsnak"])
         if legislature in LEGISLATURE_POSITIONS:
-            return LEGISLATURE_POSITIONS[legislature]
+            if current == DEPUTY or current in self.department_positions.values():
+                return LEGISLATURE_POSITIONS[legislature]
+            return None
+        if current != DEPUTY:
+            return None
         deps = {item_id(s) for s in claim.get("qualifiers", {}).get("P768", [])} & set(
             self.department_positions
         )
