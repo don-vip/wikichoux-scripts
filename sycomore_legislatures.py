@@ -53,7 +53,7 @@ SYCOMORE_DATABASE = "Q15271528"
 
 # (Sycomore id, Wikidata item, elected by departmental ballot), in chronological order
 LEGISLATURES = [
-    ("1", "Q876424", True),  # Assemblée nationale constituante (1789)
+    ("1", "Q876424", False),  # Assemblée nationale constituante (1789), elected by bailliage
     ("2", "Q780457", True),  # Assemblée nationale législative (1791)
     ("3", "Q219825", True),  # Convention nationale
     ("4", "Q617290", True),  # Conseil des Cinq-Cents
@@ -117,6 +117,17 @@ LEGISLATURES = [
     ("63", "Q112567597", False),
     ("64", "Q126471296", False),
 ]
+# Search parameters of the legislatures that cannot be searched by legislature id:
+# the deputies of the Estates-General / Constituent Assembly are in a separate base
+SPECIAL_SEARCHES = {
+    "1": dict(
+        base="etats_generaux",
+        debutmin="17/06/1789",
+        finmin="30/09/1791",
+        choixdate="dateau",
+        legislature="",
+    ),
+}
 LEGISLATURE_INFO = {
     an_id: (qid, departmental) for an_id, qid, departmental in LEGISLATURES
 }
@@ -278,21 +289,22 @@ def sort_key(text):
 
 def sycomore_deputies(legislature):
     """[(Sycomore id, name)] of the deputies of a legislature, in alphabetical order."""
+    params = dict(
+        base="tous_departements",
+        regle_nom="est",
+        nom="",
+        departement="",
+        choixdate="intervalle",
+        debutmin="  /  /    ",
+        finmin="  /  /    ",
+        dateau="  /  /    ",
+        legislature=legislature,
+        choixordre="chrono",
+    )
+    params.update(SPECIAL_SEARCHES.get(legislature, {}))
     deputies, offset = {}, 0
     while True:
-        page = get(
-            SYCOMORE + "resultats/%d" % offset,
-            base="tous_departements",
-            regle_nom="est",
-            nom="",
-            departement="",
-            choixdate="intervalle",
-            debutmin="  /  /    ",
-            finmin="  /  /    ",
-            dateau="  /  /    ",
-            legislature=legislature,
-            choixordre="chrono",
-        ).text
+        page = get(SYCOMORE + "resultats/%d" % offset, **params).text
         rows = re.findall(
             r'<td data-sort="([^"]*)">\s*<a href="/sycomore/fiche/(\d+)">(.*?)</a>',
             page,
