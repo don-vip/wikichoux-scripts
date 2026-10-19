@@ -137,6 +137,7 @@ SPECIAL_SEARCHES = {
 # Position replacing the generic one for all the mandates of a legislature
 LEGISLATURE_POSITIONS = {
     "Q876424": "Q59309522",  # deputy to the Estates General of 1789
+    "Q219825": "Q20808382",  # deputy to the National Convention
     "Q617290": "Q28218611",  # member of the Council of Five Hundred
 }
 LEGISLATURE_INFO = {
