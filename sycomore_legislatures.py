@@ -199,7 +199,11 @@ def get(url, **params):
                 r.raise_for_status()
                 return r
             error = "HTTP %d" % r.status_code
-        except (requests.ConnectionError, requests.Timeout) as e:
+        except (
+            requests.ConnectionError,
+            requests.Timeout,
+            requests.exceptions.ChunkedEncodingError,
+        ) as e:
             error = type(e).__name__
         attempt += 1
         if attempt >= 6 and not url.startswith(SYCOMORE):
@@ -226,7 +230,11 @@ def api_post(already_done=None, **data):
         try:
             r = session.post(WIKIDATA, data=data, timeout=60)
             error = "HTTP %d" % r.status_code
-        except (requests.ConnectionError, requests.Timeout) as e:
+        except (
+            requests.ConnectionError,
+            requests.Timeout,
+            requests.exceptions.ChunkedEncodingError,
+        ) as e:
             r, error = None, type(e).__name__
         if r is not None and r.status_code not in (500, 502, 503, 504):
             r.raise_for_status()
