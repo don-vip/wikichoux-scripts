@@ -134,18 +134,30 @@ SPECIAL_SEARCHES = {
         legislature="",
     ),
 }
-# Position replacing the generic one for all the mandates of a legislature
+# Position replacing the generic one for all the mandates of a legislature,
+# by legislature item (as in LEGISLATURES, not the assembly item)
 LEGISLATURE_POSITIONS = {
     "Q876424": "Q59309522",  # deputy to the Estates General of 1789
     "Q219825": "Q20808382",  # deputy to the National Convention
     "Q617290": "Q28218611",  # member of the Council of Five Hundred
     "Q727834": "Q28226953",  # deputy to the Corps législatif (1800-1814)
-    "Q2948403": "Q115144034",  # deputy of the Bourbon Restauration (1814-1815, 1815-1830)
-    "Q768166": "Q73196649",  # deputy of the Chamber of Representatives (1815)
+    # Chamber of Representatives (Hundred Days, 1815)
+    "Q199955": "Q73196649",
+    # Chamber of Deputies of the Departments (Bourbon Restoration, 1814-1815, 1815-1830)
+    "Q61009176": "Q115144034",
+    "Q1060780": "Q115144034",
+    "Q3025325": "Q115144034",
+    "Q61001737": "Q115144034",
+    "Q51844414": "Q115144034",
 }
 LEGISLATURE_INFO = {
     an_id: (qid, departmental) for an_id, qid, departmental in LEGISLATURES
 }
+assert set(LEGISLATURE_POSITIONS) <= {
+    qid for _, qid, _ in LEGISLATURES
+}, "LEGISLATURE_POSITIONS keys must be legislature items of LEGISLATURES: %s" % (
+    set(LEGISLATURE_POSITIONS) - {qid for _, qid, _ in LEGISLATURES}
+)
 # Qualifiers of a mandate spanning several legislatures, and which piece(s) of the split keep them
 SPLIT_QUALIFIERS = {
     "P580": None,
