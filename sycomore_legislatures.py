@@ -139,6 +139,7 @@ LEGISLATURE_POSITIONS = {
     "Q876424": "Q59309522",  # deputy to the Estates General of 1789
     "Q219825": "Q20808382",  # deputy to the National Convention
     "Q617290": "Q28218611",  # member of the Council of Five Hundred
+    "Q727834": "Q28226953",  # deputy to the Corps législatif (1800-1814)
 }
 LEGISLATURE_INFO = {
     an_id: (qid, departmental) for an_id, qid, departmental in LEGISLATURES
