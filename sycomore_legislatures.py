@@ -24,8 +24,8 @@ On every mandate processed (created, completed, split or already existing),
 the generic position "member of the French National Assembly" is replaced by
 the position specific to its legislature, or else to the assembly of that time,
 for legislatures until 1942 (LEGISLATURE_POSITIONS, e.g. "deputy to the
-National Convention", which also replaces a department position or the one of
-another legislature), or else by the deputy position of its department (e.g.
+National Convention", which also replaces a department position, the one of
+another legislature or a former one, see FORMER_POSITIONS), or else by the deputy position of its department (e.g.
 "deputy of the Seine") when one exists: the department is the constituency of
 the mandate, or else the one read on Sycomore.
 
@@ -140,26 +140,26 @@ SPECIAL_SEARCHES = {
 # specific to the legislature, or else to the assembly sitting at that time.
 # Legislatures 43 to 64 (since 1945) have none: department positions are used.
 LEGISLATURE_POSITIONS = {
-    "Q876424": "Q59309522",  # deputy to the Estates General of 1789
-    "Q780457": "Q115379837",  # member of the Legislative Assembly of 1791-1792
+    "Q876424": "Q28218485",  # deputy to the Constituent Assembly of 1789
+    "Q780457": "Q73192657",  # deputy to the Legislative Assembly of 1791-1792
     "Q219825": "Q20808382",  # deputy to the National Convention
     "Q617290": "Q28218611",  # member of the Council of Five Hundred
     "Q727834": "Q28226953",  # deputy to the Corps législatif (1800-1814)
     "Q61009176": "Q98695168",  # deputy of the First Restoration (1814-1815)
-    "Q199955": "Q73196649",  # member of the Chamber of Representatives (1815)
+    "Q199955": "Q72140477",  # member of the Chamber of Representatives (1815)
     # Chamber of Deputies of the Departments (Second Restoration, 1815-1830)
     "Q1060780": "Q115144034",
     "Q3025325": "Q115144034",
     "Q61001737": "Q115144034",
     "Q51844414": "Q115144034",
     # Chamber of Deputies (July Monarchy, 1830-1848)
-    "Q51844406": "Q114992148",
-    "Q51844400": "Q114992148",
-    "Q51844386": "Q114992148",
-    "Q51844381": "Q114992148",
-    "Q51844286": "Q114992148",
-    "Q33523154": "Q114992148",
-    "Q33522599": "Q114992148",
+    "Q51844406": "Q15272017",
+    "Q51844400": "Q15272017",
+    "Q51844386": "Q15272017",
+    "Q51844381": "Q15272017",
+    "Q51844286": "Q15272017",
+    "Q33523154": "Q15272017",
+    "Q33522599": "Q15272017",
     "Q2867090": "Q115145840",  # member of the Constituent Assembly of 1848
     "Q2867094": "Q115148158",  # deputy to the Legislative Assembly (1849-1851)
     # Corps législatif (Second Empire, 1852-1870)
@@ -185,6 +185,10 @@ LEGISLATURE_POSITIONS = {
     "Q33728280": "Q115548470",
     "Q16683508": "Q115548470",
     "Q16683505": "Q115548470",
+}
+# Positions formerly used for a legislature, also replaced by its position
+FORMER_POSITIONS = {
+    "Q59309522",  # deputy to the Estates General of 1789 (legislature of 1789)
 }
 LEGISLATURE_INFO = {
     an_id: (qid, departmental) for an_id, qid, departmental in LEGISLATURES
@@ -470,6 +474,14 @@ def deputy_positions():
     return {DEPUTY} | {qid_of(b["p"]["value"]) for b in rows}
 
 
+def position_redirects():
+    """Merged deputy position -> item it redirects to."""
+    rows = sparql(
+        "SELECT ?r ?p WHERE { ?r owl:sameAs ?p. ?p wdt:P279+ wd:%s }" % DEPUTY
+    )
+    return {qid_of(b["r"]["value"]): qid_of(b["p"]["value"]) for b in rows}
+
+
 def department_positions():
     """Department QID -> deputy position of this department (P1001), when unique."""
     rows = sparql(
@@ -679,6 +691,7 @@ class Bot:
         self.cache = FicheCache(cache)
         self.by_sycomore = sycomore_items()
         self.positions = deputy_positions()
+        self.redirects = position_redirects()
         self.department_positions = department_positions()
         self.departments = Departments()
         self.periods = {}
@@ -706,6 +719,13 @@ class Bot:
             if "entities" not in res:
                 raise RuntimeError("wbgetentities: %s" % res.get("error"))
             entities.update(res["entities"])
+        # Positions merged into another item: use the target (saved with the next edit)
+        for entity in entities.values():
+            for claim in entity.get("claims", {}).get("P39", []):
+                target = self.redirects.get(item_id(claim["mainsnak"]))
+                if target:
+                    claim["mainsnak"]["datavalue"]["value"]["id"] = target
+                    claim["mainsnak"]["datavalue"]["value"].pop("numeric-id", None)
         for qid, simulated in self.simulated.items():
             if qid in entities:
                 p39 = entities[qid].setdefault("claims", {}).setdefault("P39", [])
@@ -763,6 +783,7 @@ class Bot:
                 current == DEPUTY
                 or current in self.department_positions.values()
                 or current in LEGISLATURE_POSITIONS.values()
+                or current in FORMER_POSITIONS
             ):
                 return position
             return None
