@@ -22,11 +22,12 @@ existing at the mandate start date (P571/P576).
 
 On every mandate processed (created, completed, split or already existing),
 the generic position "member of the French National Assembly" is replaced by
-the position of its legislature when there is one (LEGISLATURE_POSITIONS, e.g.
-"deputy to the Estates General of 1789", which also replaces a department
-position), or else by the deputy position of its
-department (e.g. "deputy of the Seine") when one exists: the department is the
-constituency of the mandate, or else the one read on Sycomore.
+the position specific to its legislature, or else to the assembly of that time,
+for legislatures until 1942 (LEGISLATURE_POSITIONS, e.g. "deputy to the
+National Convention", which also replaces a department position or the one of
+another legislature), or else by the deputy position of its department (e.g.
+"deputy of the Seine") when one exists: the department is the constituency of
+the mandate, or else the one read on Sycomore.
 
 Sycomore records are kept in a JSON cache, so the script can be restarted
 without downloading everything again.
@@ -135,20 +136,55 @@ SPECIAL_SEARCHES = {
     ),
 }
 # Position replacing the generic one for all the mandates of a legislature,
-# by legislature item (as in LEGISLATURES, not the assembly item)
+# by legislature item (as in LEGISLATURES, not the assembly item): the position
+# specific to the legislature, or else to the assembly sitting at that time.
+# Legislatures 43 to 64 (since 1945) have none: department positions are used.
 LEGISLATURE_POSITIONS = {
     "Q876424": "Q59309522",  # deputy to the Estates General of 1789
+    "Q780457": "Q115379837",  # member of the Legislative Assembly of 1791-1792
     "Q219825": "Q20808382",  # deputy to the National Convention
     "Q617290": "Q28218611",  # member of the Council of Five Hundred
     "Q727834": "Q28226953",  # deputy to the Corps législatif (1800-1814)
-    # Chamber of Representatives (Hundred Days, 1815)
-    "Q199955": "Q73196649",
-    # Chamber of Deputies of the Departments (Bourbon Restoration, 1814-1815, 1815-1830)
-    "Q61009176": "Q115144034",
+    "Q61009176": "Q98695168",  # deputy of the First Restoration (1814-1815)
+    "Q199955": "Q73196649",  # member of the Chamber of Representatives (1815)
+    # Chamber of Deputies of the Departments (Second Restoration, 1815-1830)
     "Q1060780": "Q115144034",
     "Q3025325": "Q115144034",
     "Q61001737": "Q115144034",
     "Q51844414": "Q115144034",
+    # Chamber of Deputies (July Monarchy, 1830-1848)
+    "Q51844406": "Q114992148",
+    "Q51844400": "Q114992148",
+    "Q51844386": "Q114992148",
+    "Q51844381": "Q114992148",
+    "Q51844286": "Q114992148",
+    "Q33523154": "Q114992148",
+    "Q33522599": "Q114992148",
+    "Q2867090": "Q115145840",  # member of the Constituent Assembly of 1848
+    "Q2867094": "Q115148158",  # deputy to the Legislative Assembly (1849-1851)
+    # Corps législatif (Second Empire, 1852-1870)
+    "Q33523493": "Q98728006",
+    "Q33758116": "Q98728006",
+    "Q33758518": "Q98728006",
+    "Q33759105": "Q98728006",
+    "Q2867086": "Q115243758",  # deputy to the National Assembly (1871-1876)
+    # Chamber of Deputies (Third Republic, 1876-1942)
+    "Q33754196": "Q115548470",
+    "Q33757119": "Q115548470",
+    "Q33756706": "Q115548470",
+    "Q33756209": "Q115548470",
+    "Q33755832": "Q115548470",
+    "Q33755445": "Q115548470",
+    "Q33322771": "Q115548470",
+    "Q33323082": "Q115548470",
+    "Q33323183": "Q115548470",
+    "Q33369535": "Q115548470",
+    "Q33528422": "Q115548470",
+    "Q33724121": "Q115548470",
+    "Q16683492": "Q115548470",
+    "Q33728280": "Q115548470",
+    "Q16683508": "Q115548470",
+    "Q16683505": "Q115548470",
 }
 LEGISLATURE_INFO = {
     an_id: (qid, departmental) for an_id, qid, departmental in LEGISLATURES
@@ -717,13 +753,18 @@ class Bot:
         return qid
 
     def position(self, claim, legislature, dep, start):
-        """Position of the legislature (replacing the generic position or a department
-        one), or else deputy position of the department (replacing the generic position)
+        """Position of the legislature (replacing the generic position, a department one
+        or the one of another legislature), or else deputy position of the department (replacing the generic position)
         of a mandate, or None if there is nothing more precise."""
         current = item_id(claim["mainsnak"])
         if legislature in LEGISLATURE_POSITIONS:
-            if current == DEPUTY or current in self.department_positions.values():
-                return LEGISLATURE_POSITIONS[legislature]
+            position = LEGISLATURE_POSITIONS[legislature]
+            if position != current and (
+                current == DEPUTY
+                or current in self.department_positions.values()
+                or current in LEGISLATURE_POSITIONS.values()
+            ):
+                return position
             return None
         if current != DEPUTY:
             return None
