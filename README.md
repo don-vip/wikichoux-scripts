@@ -41,7 +41,7 @@ For each mandate read on a Sycomore record:
 
 Sycomore only gives the department. It is used as the constituency only for legislatures elected by departmental ballot, and the item chosen is the one that existed when the mandate started ([P571](https://www.wikidata.org/wiki/Property:P571)/[P576](https://www.wikidata.org/wiki/Property:P576)).
 
-On every mandate processed (created, completed, split or already existing), the generic position "member of the French National Assembly" is replaced by the position specific to its legislature, or else to the assembly sitting at that time, for every legislature until 1942 (e.g. [deputy to the National Convention](https://www.wikidata.org/wiki/Q20808382) or [deputy of the July Monarchy](https://www.wikidata.org/wiki/Q15272017), see `LEGISLATURE_POSITIONS` in the script; it also replaces a department position, the position of another legislature, or a position formerly used for it, see `FORMER_POSITIONS`), or else by the deputy position of its department (e.g. [deputy of the Seine](https://www.wikidata.org/wiki/Q58462858)), i.e. the subclass of [Q3044918](https://www.wikidata.org/wiki/Q3044918) whose "applies to jurisdiction" ([P1001](https://www.wikidata.org/wiki/Property:P1001)) is that department, when there is exactly one. The department is the constituency of the mandate, or else the one read on Sycomore. Positions merged into another item on Wikidata are read as the item they redirect to.
+On every mandate processed (created, completed, split or already existing), the generic position "member of the French National Assembly" is replaced by the position specific to its legislature, or else to the assembly sitting at that time, for every legislature until 1942 (e.g. [deputy to the National Convention](https://www.wikidata.org/wiki/Q20808382) or [deputy of the July Monarchy](https://www.wikidata.org/wiki/Q15272017), see `LEGISLATURE_POSITIONS` in the script; it also replaces a department position, the position of another legislature, or a position formerly used for it, see `FORMER_POSITIONS`), or else by the deputy position of its department (e.g. [deputy of the Seine](https://www.wikidata.org/wiki/Q58462858)), i.e. the subclass of [Q3044918](https://www.wikidata.org/wiki/Q3044918) whose "applies to jurisdiction" ([P1001](https://www.wikidata.org/wiki/Property:P1001)) is that department, when there is exactly one. The department is the constituency of the mandate, or else the one read on Sycomore. When a department position is replaced by a more precise one, its department is kept as the constituency if it is the one read on Sycomore, even for legislatures not elected by departmental ballot. Positions merged into another item on Wikidata are read as the item they redirect to.
 
 Usage:
 
@@ -51,6 +51,8 @@ python3 sycomore_legislatures.py --dry-run
 
 # Only some legislatures (Sycomore IDs, see LEGISLATURES in the script)
 python3 sycomore_legislatures.py --dry-run --legislatures 2,30,61
+# or ranges of IDs (IDs missing from Sycomore, such as 11, are skipped)
+python3 sycomore_legislatures.py --dry-run --legislatures 1-22,30
 
 # Real run (a bot password is recommended)
 WIKIDATA_PASSWORD=... python3 sycomore_legislatures.py --user "MyUser@MyBot"

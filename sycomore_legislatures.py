@@ -693,6 +693,7 @@ class Bot:
         self.positions = deputy_positions()
         self.redirects = position_redirects()
         self.department_positions = department_positions()
+        self.position_departments = {p: d for d, p in self.department_positions.items()}
         self.departments = Departments()
         self.periods = {}
         # Dry run: QID -> {claim id: claim} of the edits not sent, applied to the entities read again later
@@ -798,11 +799,25 @@ class Bot:
             )
         return self.department_positions[deps.pop()] if deps else None
 
+    def keep_department(self, claim, former, dep, start):
+        """Keep as constituency the department of a department position (e.g. deputy of the Ain)
+        replaced by a more precise one, if it is the department read on Sycomore at this date.
+        """
+        if claim.get("qualifiers", {}).get("P768"):
+            return False
+        dep_qid = self.position_departments.get(former)
+        if not dep_qid or self.departments.resolve(dep, start)[0] != dep_qid:
+            return False
+        add_qualifier(claim, item_snak("P768", dep_qid))
+        return True
+
     def refine(self, claim, legislature, dep, start, changed, actions):
         """Replace the generic position of a mandate by a more precise one."""
         position = self.position(claim, legislature, dep, start)
         if position:
             claim = changed.setdefault(claim["id"], copy_claim(claim))
+            if self.keep_department(claim, item_id(claim["mainsnak"]), dep, start):
+                actions.append("constituency")
             claim["mainsnak"] = item_snak("P39", position)
             actions.append("position")
 
@@ -1062,6 +1077,8 @@ class Bot:
                 dep_qid = self.constituency(who, dep, start, departmental)
                 if dep_qid:
                     add_qualifier(piece, item_snak("P768", dep_qid))
+            # The department of the original position applies to every piece in this department
+            self.keep_department(piece, item_id(claim["mainsnak"]), dep, start)
             position = self.position(piece, legislature, dep, start)
             if position:
                 piece["mainsnak"] = item_snak("P39", position)
@@ -1135,7 +1152,8 @@ def main():
     )
     parser.add_argument(
         "--legislatures",
-        help="comma-separated Sycomore legislature ids to process (default: all, e.g. 2,30,61)",
+        help="comma-separated Sycomore legislature ids or ranges of ids to process "
+        "(default: all, e.g. 2,30,61 or 1-22,30)",
     )
     parser.add_argument(
         "--cache",
@@ -1146,8 +1164,16 @@ def main():
 
     legislatures = LEGISLATURES
     if args.legislatures:
-        wanted = args.legislatures.split(",")
-        unknown = set(wanted) - set(LEGISLATURE_INFO)
+        wanted = set()
+        for part in args.legislatures.split(","):
+            bounds = re.fullmatch(r"(\d+)-(\d+)", part.strip())
+            if bounds:
+                # Ids missing from Sycomore (e.g. 11) are skipped inside a range
+                first, last = map(int, bounds.groups())
+                wanted |= {i for i in LEGISLATURE_INFO if first <= int(i) <= last}
+            else:
+                wanted.add(part.strip())
+        unknown = wanted - set(LEGISLATURE_INFO)
         if unknown:
             parser.error("unknown legislatures: %s" % ", ".join(sorted(unknown)))
         legislatures = [leg for leg in LEGISLATURES if leg[0] in wanted]
