@@ -16,8 +16,10 @@ one in alphabetical order. For each mandate read on the Sycomore record:
 - anything else (different dates, ambiguous mandates...) is reported as
   "TO CHECK" and left untouched.
 
-Sycomore only gives the department: it is used as constituency only for
-legislatures elected by departmental ballot, and the chosen item is the one
+Sycomore only gives the department: it is added as constituency, when the
+mandate has none, for legislatures elected by departmental ballot and for
+legislatures until 1942 (whose position does not give the department), except
+1789 (bailliages), and the chosen item is the one
 existing at the mandate start date (P571/P576).
 
 On every mandate processed (created, completed, split or already existing),
@@ -693,7 +695,6 @@ class Bot:
         self.positions = deputy_positions()
         self.redirects = position_redirects()
         self.department_positions = department_positions()
-        self.position_departments = {p: d for d, p in self.department_positions.items()}
         self.departments = Departments()
         self.periods = {}
         # Dry run: QID -> {claim id: claim} of the edits not sent, applied to the entities read again later
@@ -765,8 +766,12 @@ class Bot:
         self.stats["to check"] += 1
         print("  TO CHECK %s: %s" % (who, reason), flush=True)
 
-    def constituency(self, who, dep, start, departmental):
-        if not departmental:
+    def constituency(self, who, dep, start, departmental, legislature):
+        """Department of a mandate, as constituency: for legislatures elected by departmental ballot,
+        and for those whose position does not give the department (until 1942, the constituencies
+        being then parts of a department), unless Sycomore gives none (bailliages of 1789).
+        """
+        if not departmental and (legislature not in LEGISLATURE_POSITIONS or not dep):
             return None
         qid, error = self.departments.resolve(dep, start)
         if error:
@@ -799,25 +804,11 @@ class Bot:
             )
         return self.department_positions[deps.pop()] if deps else None
 
-    def keep_department(self, claim, former, dep, start):
-        """Keep as constituency the department of a department position (e.g. deputy of the Ain)
-        replaced by a more precise one, if it is the department read on Sycomore at this date.
-        """
-        if claim.get("qualifiers", {}).get("P768"):
-            return False
-        dep_qid = self.position_departments.get(former)
-        if not dep_qid or self.departments.resolve(dep, start)[0] != dep_qid:
-            return False
-        add_qualifier(claim, item_snak("P768", dep_qid))
-        return True
-
     def refine(self, claim, legislature, dep, start, changed, actions):
         """Replace the generic position of a mandate by a more precise one."""
         position = self.position(claim, legislature, dep, start)
         if position:
             claim = changed.setdefault(claim["id"], copy_claim(claim))
-            if self.keep_department(claim, item_id(claim["mainsnak"]), dep, start):
-                actions.append("constituency")
             claim["mainsnak"] = item_snak("P39", position)
             actions.append("position")
 
@@ -899,7 +890,9 @@ class Bot:
                 used.add(claim["id"])
                 count = len(actions)
                 if not claim.get("qualifiers", {}).get("P768"):
-                    dep_qid = self.constituency(who, dep, start, departmental)
+                    dep_qid = self.constituency(
+                        who, dep, start, departmental, legislature
+                    )
                     if dep_qid:
                         claim = changed.setdefault(claim["id"], copy_claim(claim))
                         add_qualifier(claim, item_snak("P768", dep_qid))
@@ -933,7 +926,7 @@ class Bot:
                 )
                 continue
             if not candidates:
-                dep_qid = self.constituency(who, dep, start, departmental)
+                dep_qid = self.constituency(who, dep, start, departmental, legislature)
                 claim = new_claim(start, end, legislature, dep_qid, sid)
                 position = self.position(claim, legislature, dep, start) or DEPUTY
                 claim["mainsnak"] = item_snak("P39", position)
@@ -985,7 +978,7 @@ class Bot:
                     ),
                 )
                 continue
-            dep_qid = self.constituency(who, dep, start, departmental)
+            dep_qid = self.constituency(who, dep, start, departmental, legislature)
             claim = changed.setdefault(claim["id"], copy_claim(claim))
             add_qualifier(claim, item_snak("P2937", legislature))
             if dep_qid and not claim["qualifiers"].get("P768"):
@@ -1074,11 +1067,9 @@ class Bot:
                         continue
                     add_qualifier(piece, {k: v for k, v in snak.items() if k != "hash"})
             if not piece["qualifiers"].get("P768"):
-                dep_qid = self.constituency(who, dep, start, departmental)
+                dep_qid = self.constituency(who, dep, start, departmental, legislature)
                 if dep_qid:
                     add_qualifier(piece, item_snak("P768", dep_qid))
-            # The department of the original position applies to every piece in this department
-            self.keep_department(piece, item_id(claim["mainsnak"]), dep, start)
             position = self.position(piece, legislature, dep, start)
             if position:
                 piece["mainsnak"] = item_snak("P39", position)
